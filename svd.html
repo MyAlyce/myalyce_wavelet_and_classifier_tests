@@ -1,0 +1,533 @@
+<html>
+    <head>
+
+    </head>
+    <body>
+        Input:
+        <div id="input"></div>
+        <br>
+        Output (numericjs method):
+        <div id="output"></div>
+        Output2 (naive method):
+        <div id="output2"></div>
+        <script>
+            
+function cloneMatrix(matrix) {
+    return matrix.map(row => {
+        if(Array.isArray(row[0])) return cloneMatrix(row);
+        else return [...row];
+    });
+}
+
+function svd(A) {
+    if (A[0].length > A.length) {
+        A = this.transpose(A);
+    }
+    const m = A.length;
+    const n = A[0].length;
+    if (m < n) throw new Error("Need more rows than columns");
+
+    const prec = Number.EPSILON;
+    const tolerance = 1.e-64 / prec;
+    const itmax = 50;
+
+    const leftSingularVectors = cloneMatrix(A);
+    const offDiagonalValues = Array(n).fill(0);
+    const singularValues = Array(n).fill(0);
+    const rightSingularVectors = Array.from({ length: n }, () => Array(n).fill(0));
+
+    function pythag(a, b) {
+        if (a === 0 || b === 0) return a + b;
+        const absA = Math.abs(a), absB = Math.abs(b);
+        if (absA > absB) {
+            const t = absB / absA;
+            return absA * Math.sqrt(1 + t * t);
+        } else {
+            const t = absA / absB;
+            return absB * Math.sqrt(1 + t * t);
+        }
+    }
+
+    let scaleFactorF = 0.0;
+    let scaleFactorG = 0.0;
+    let scaleFactorH = 0.0;
+    let maxMagnitude = 0.0;
+    let intermediateY = 0.0;
+    let intermediateZ = 0.0;
+    let sumValue = 0.0;
+    let cosineTheta=0;
+	let limitIndex=0;
+
+    for (let i = 0; i < n; i++) {
+        offDiagonalValues[i] = scaleFactorG ;
+        sumValue = 0.0;
+        limitIndex = i + 1;
+        for (let j = i; j < m; j++) sumValue += (leftSingularVectors[j][i] * leftSingularVectors[j][i]);
+        if (sumValue <= tolerance) scaleFactorG  = 0.0;
+        else {
+            scaleFactorF  = leftSingularVectors[i][i];
+            scaleFactorG  = Math.sqrt(sumValue);
+            if (scaleFactorF  >= 0.0) scaleFactorG  = -scaleFactorG ;
+            scaleFactorH = scaleFactorF  * scaleFactorG  - sumValue;
+            leftSingularVectors[i][i] = scaleFactorF  - scaleFactorG ;
+            for (let j = limitIndex; j < n; j++) {
+                sumValue = 0.0;
+                for (let k = i; k < m; k++) sumValue += leftSingularVectors[k][i] * leftSingularVectors[k][j];
+                scaleFactorF  = sumValue / scaleFactorH;
+                for (let k = i; k < m; k++) leftSingularVectors[k][j] += scaleFactorF  * leftSingularVectors[k][i];
+            }
+        }
+        singularValues[i] = scaleFactorG ;
+        sumValue = 0.0;
+        for (let j = limitIndex; j < n; j++) sumValue += leftSingularVectors[i][j] * leftSingularVectors[i][j];
+        if (sumValue <= tolerance) scaleFactorG  = 0.0;
+        else {
+            scaleFactorF  = leftSingularVectors[i][i + 1];
+            scaleFactorG  = Math.sqrt(sumValue);
+            if (scaleFactorF  >= 0.0) scaleFactorG  = -scaleFactorG ;
+            scaleFactorH = scaleFactorF  * scaleFactorG  - sumValue;
+            leftSingularVectors[i][i + 1] = scaleFactorF  - scaleFactorG ;
+            for (let j = limitIndex; j < n; j++) offDiagonalValues[j] = leftSingularVectors[i][j] / scaleFactorH;
+            for (let j = limitIndex; j < m; j++) {
+                sumValue = 0.0;
+                for (let k = limitIndex; k < n; k++) sumValue += leftSingularVectors[j][k] * leftSingularVectors[i][k];
+                for (let k = limitIndex; k < n; k++) leftSingularVectors[j][k] += sumValue * offDiagonalValues[k];
+            }
+        }
+        intermediateY = Math.abs(singularValues[i]) + Math.abs(offDiagonalValues[i]);
+        if (intermediateY > maxMagnitude) maxMagnitude = intermediateY;
+    }
+
+    for (let i = n - 1; i >= 0; i--) {
+        if (scaleFactorG  !== 0.0) {
+            scaleFactorH = scaleFactorG  * leftSingularVectors[i][i + 1];
+            for (let j = limitIndex; j < n; j++) rightSingularVectors[j][i] = leftSingularVectors[i][j] / scaleFactorH;
+            for (let j = limitIndex; j < n; j++) {
+                sumValue = 0.0;
+                for (let k = limitIndex; k < n; k++) sumValue += leftSingularVectors[i][k] * rightSingularVectors[k][j];
+                for (let k = limitIndex; k < n; k++) rightSingularVectors[k][j] += sumValue * rightSingularVectors[k][i];
+            }
+        }
+        for (let j = limitIndex; j < n; j++) {
+            rightSingularVectors[i][j] = 0;
+            rightSingularVectors[j][i] = 0;
+        }
+        rightSingularVectors[i][i] = 1;
+        scaleFactorG  = offDiagonalValues[i];
+        limitIndex = i;
+    }
+
+    for (let i = n - 1; i >= 0; i--) {
+        limitIndex = i + 1;
+        scaleFactorG  = singularValues[i];
+        for (let j = limitIndex; j < n; j++) leftSingularVectors[i][j] = 0;
+        if (scaleFactorG  !== 0.0) {
+            scaleFactorH = leftSingularVectors[i][i] * scaleFactorG ;
+            for (let j = limitIndex; j < n; j++) {
+                sumValue = 0.0;
+                for (let k = limitIndex; k < m; k++) sumValue += leftSingularVectors[k][i] * leftSingularVectors[k][j];
+                scaleFactorF  = sumValue / scaleFactorH;
+                for (let k = i; k < m; k++) leftSingularVectors[k][j] += scaleFactorF  * leftSingularVectors[k][i];
+            }
+            for (let j = i; j < m; j++) leftSingularVectors[j][i] = leftSingularVectors[j][i] / scaleFactorG ;
+        } else {
+            for (let j = i; j < m; j++) leftSingularVectors[j][i] = 0;
+        }
+        leftSingularVectors[i][i] += 1;
+    }
+
+    const eps = prec * maxMagnitude;
+    for (let k = n - 1; k >= 0; k--) {
+        for (let iteration = 0; iteration < itmax; iteration++) {
+            let testConvergence = false;
+            for (limitIndex = k; limitIndex >= 0; limitIndex--) {
+                if (Math.abs(offDiagonalValues[limitIndex]) <= eps) {
+                    testConvergence = true;
+                    break;
+                }
+                if (Math.abs(singularValues[limitIndex - 1]) <= eps) break;
+            }
+            if (!testConvergence) {
+                cosineTheta = 0.0;
+                sumValue = 1.0;
+                const l1 = limitIndex - 1;
+                for (let i = limitIndex; i < k + 1; i++) {
+                    scaleFactorF  = sumValue * offDiagonalValues[i];
+                    offDiagonalValues[i] = cosineTheta * offDiagonalValues[i];
+                    if (Math.abs(scaleFactorF ) <= eps) break;
+                    scaleFactorG  = singularValues[i];
+                    scaleFactorH = pythag(scaleFactorF , scaleFactorG );
+                    singularValues[i] = scaleFactorH;
+                    cosineTheta = scaleFactorG  / scaleFactorH;
+                    sumValue = -scaleFactorF  / scaleFactorH;
+                    for (let j = 0; j < m; j++) {
+                        intermediateY = leftSingularVectors[j][l1];
+                        intermediateZ = leftSingularVectors[j][i];
+                        leftSingularVectors[j][l1] = intermediateY * cosineTheta + intermediateZ * sumValue;
+                        leftSingularVectors[j][i] = -intermediateY * sumValue + intermediateZ * cosineTheta;
+                    }
+                }
+            }
+            intermediateZ = singularValues[k];
+            if (limitIndex === k) {
+                if (intermediateZ < 0.0) {
+                    singularValues[k] = -intermediateZ;
+                    for (let j = 0; j < n; j++) rightSingularVectors[j][k] = -rightSingularVectors[j][k];
+                }
+                break;
+            }
+            if (iteration >= itmax - 1) throw new Error("No convergence.");
+            maxMagnitude = singularValues[limitIndex];
+            intermediateY = singularValues[k - 1];
+            scaleFactorG  = offDiagonalValues[k - 1];
+            scaleFactorH = offDiagonalValues[k];
+            scaleFactorF  = ((intermediateY - intermediateZ) * (intermediateY + intermediateZ) + (scaleFactorG  - scaleFactorH) * (scaleFactorG  + scaleFactorH)) / (2.0 * scaleFactorH * intermediateY);
+            scaleFactorG  = pythag(scaleFactorF , 1.0);
+            if (scaleFactorF  < 0.0) scaleFactorF  = ((maxMagnitude - intermediateZ) * (maxMagnitude + intermediateZ) + scaleFactorH * (intermediateY / (scaleFactorF  - scaleFactorG ) - scaleFactorH)) / maxMagnitude;
+            else scaleFactorF  = ((maxMagnitude - intermediateZ) * (maxMagnitude + intermediateZ) + scaleFactorH * (intermediateY / (scaleFactorF  + scaleFactorG ) - scaleFactorH)) / maxMagnitude;
+            cosineTheta = 1.0;
+            sumValue = 1.0;
+            for (let i = limitIndex + 1; i < k + 1; i++) {
+                scaleFactorG  = offDiagonalValues[i];
+                intermediateY = singularValues[i];
+                scaleFactorH = sumValue * scaleFactorG ;
+                scaleFactorG  = cosineTheta * scaleFactorG ;
+                intermediateZ = pythag(scaleFactorF , scaleFactorH);
+                offDiagonalValues[i - 1] = intermediateZ;
+                cosineTheta = scaleFactorF  / intermediateZ;
+                sumValue = scaleFactorH / intermediateZ;
+                scaleFactorF  = maxMagnitude * cosineTheta + scaleFactorG  * sumValue;
+                scaleFactorG  = -maxMagnitude * sumValue + scaleFactorG  * cosineTheta;
+                scaleFactorH = intermediateY * sumValue;
+                intermediateY = intermediateY * cosineTheta;
+                for (let j = 0; j < n; j++) {
+                    maxMagnitude = rightSingularVectors[j][i - 1];
+                    intermediateZ = rightSingularVectors[j][i];
+                    rightSingularVectors[j][i - 1] = maxMagnitude * cosineTheta + intermediateZ * sumValue;
+                    rightSingularVectors[j][i] = -maxMagnitude * sumValue + intermediateZ * cosineTheta;
+                }
+                intermediateZ = pythag(scaleFactorF , scaleFactorH);
+                singularValues[i - 1] = intermediateZ;
+                cosineTheta = scaleFactorF  / intermediateZ;
+                sumValue = scaleFactorH / intermediateZ;
+                scaleFactorF  = cosineTheta * scaleFactorG  + sumValue * intermediateY;
+                maxMagnitude = -sumValue * scaleFactorG  + cosineTheta * intermediateY;
+                for (let j = 0; j < m; j++) {
+                    intermediateY = leftSingularVectors[j][i - 1];
+                    intermediateZ = leftSingularVectors[j][i];
+                    leftSingularVectors[j][i - 1] = intermediateY * cosineTheta + intermediateZ * sumValue;
+                    leftSingularVectors[j][i] = -intermediateY * sumValue + intermediateZ * cosineTheta;
+                }
+            }
+            offDiagonalValues[limitIndex] = 0.0;
+            offDiagonalValues[k] = scaleFactorF ;
+            singularValues[k] = maxMagnitude;
+        }
+    }
+
+    for (let i = 0; i < singularValues.length; i++) if (singularValues[i] < prec) singularValues[i] = 0;
+
+    for (let i = 0; i < n; i++) {
+        for (let j = i - 1; j >= 0; j--) {
+            if (singularValues[j] < singularValues[i]) {
+                cosineTheta = singularValues[j];
+                singularValues[j] = singularValues[i];
+                singularValues[i] = cosineTheta;
+                for (let k = 0; k < leftSingularVectors.length; k++) {
+                    const temp = leftSingularVectors[k][i];
+                    leftSingularVectors[k][i] = leftSingularVectors[k][j];
+                    leftSingularVectors[k][j] = temp;
+                }
+                for (let k = 0; k < rightSingularVectors.length; k++) {
+                    const temp = rightSingularVectors[k][i];
+                    rightSingularVectors[k][i] = rightSingularVectors[k][j];
+                    rightSingularVectors[k][j] = temp;
+                }
+                i = j;
+            }
+        }
+    }
+
+    return { U: leftSingularVectors, S: singularValues, V: rightSingularVectors };
+}
+
+/**
+ * 
+ -   U contains the left singular vectors (orthonormal columns).
+ -   S is a diagonal matrix with singular values.
+ -   V contains the right singular vectors (orthonormal rows).
+ * 
+ */
+
+ function transpose(matrix) {
+    return matrix[0].map((_, colIndex) => matrix.map(row => row[colIndex]));
+}
+
+function matrixMultiply(A, B) {
+    return A.map(row => 
+        B[0].map((_, colIndex) => 
+            row.reduce((sum, cell, rowIndex) => sum + cell * B[rowIndex][colIndex], 0)
+        )
+    );
+}
+
+function matrixSubtract(A, B) {
+    return A.map((row, rowIndex) => 
+        row.map((cell, colIndex) => cell - B[rowIndex][colIndex])
+    );
+}
+
+function diagonalMatrix(values) {
+        return values.map((value, index) => {
+            const row = Array(values.length).fill(0);
+            row[index] = value;
+            return row;
+        });
+}
+
+function qrDecomposition(matrix) {
+    const numRows = matrix.length;
+    const numCols = matrix[0].length;
+    let Q = identityMatrix(numRows);
+    let R = matrix.map(row => row.slice());
+
+    for (let k = 0; k < numCols; k++) {
+        const x = getColumn(R, k).slice(k);
+        const e = new Array(x.length).fill(0);
+        e[0] = (x[0] > 0) ? -vectorNorm(x) : vectorNorm(x);
+
+        const u = vectorSubtract(x, e);
+        const normU = vectorNorm(u);
+        const v = u.map(val => val / normU);
+
+        const Qk = householderMatrix(v);
+        const QkFull = identityMatrix(numRows);
+
+        for (let row = k; row < numRows; row++) {
+            for (let col = k; col < numRows; col++) {
+                QkFull[row][col] = Qk[row - k][col - k];
+            }
+        }
+
+        Q = matrixMultiply(Q, QkFull);
+        R = matrixMultiply(QkFull, R);
+    }
+
+    return { Q: Q, R: R };
+}
+
+function randomMatrix(rows, cols) {
+    return Array.from({ length: rows }, () => 
+        Array.from({ length: cols }, () => Math.random())
+    );
+}
+
+function identityMatrix(size) {
+    return Array.from({ length: size }, (_, i) => Array.from({ length: size }, (_, j) => (i === j ? 1 : 0)));
+}
+
+function getColumn(matrix, col)  {
+    return matrix.map(row => row[col]);
+}
+
+function vectorNorm(vector)  {
+    return Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+}
+
+function vectorSubtract(a, b)  {
+    return a.map((val, i) => val - b[i]);
+}
+
+function householderMatrix(v) {
+    const size = v.length;
+    const vvT = v.map(rowVal => v.map(colVal => rowVal * colVal));
+    const vTv = vectorNorm(v) ** 2;
+
+    return Array.from({ length: size }, (_, i) => Array.from({ length: size }, (_, j) => (i === j ? 1 : 0) - 2 * vvT[i][j] / vTv));
+}
+
+
+function inverse(matrix) {
+    const numRows = matrix.length;
+    const numCols = matrix[0].length;
+
+    if (numRows !== numCols) {
+        throw new Error("Matrix must be square to compute its inverse.");
+    }
+
+    // Augment the matrix with the identity matrix
+    const augmentedMatrix = matrix.map((row, rowIndex) => {
+        const identityRow = Array(numRows).fill(0);
+        identityRow[rowIndex] = 1;
+        return row.concat(identityRow);
+    });
+
+    for (let pivotRow = 0; pivotRow < numRows; pivotRow++) {
+        const pivot = augmentedMatrix[pivotRow][pivotRow];
+        if (pivot === 0) {
+            throw new Error("Matrix is singular and cannot be inverted.");
+        }
+
+        // Normalize the pivot row
+        for (let col = 0; col < 2 * numCols; col++) {
+            augmentedMatrix[pivotRow][col] /= pivot;
+        }
+
+        // Eliminate other rows
+        for (let row = 0; row < numRows; row++) {
+            if (row !== pivotRow) {
+                const factor = augmentedMatrix[row][pivotRow];
+                for (let col = 0; col < 2 * numCols; col++) {
+                    augmentedMatrix[row][col] -= factor * augmentedMatrix[pivotRow][col];
+                }
+            }
+        }
+    }
+
+    // Extract the right half of the augmented matrix as the inverse
+    return augmentedMatrix.map(row => row.slice(numCols));
+}
+
+function pseudoInverse(matrix) {
+    const numRows = matrix.length;
+    const numCols = matrix[0].length;
+
+    if (numRows > numCols) {
+        // Tall matrix
+        const ata = matrixMultiply(transpose(matrix), matrix); // A^T A
+        const ataInv = inverse(ata); // (A^T A)^{-1}
+        return matrixMultiply(ataInv, transpose(matrix)); // (A^T A)^{-1} A^T
+    } else {
+        // Wide matrix
+        const aat = matrixMultiply(matrix, transpose(matrix)); // A A^T
+        const aatInv = inverse(aat); // (A A^T)^{-1}
+        return matrixMultiply(transpose(matrix), aatInv); // A^T (A A^T)^{-1}
+    }
+}
+
+console.log(
+    pseudoInverse([
+        [1,2],
+        [3,4],
+        [5,6]
+    ])
+)
+
+function svdSimultaneousPowerIteration(matrixA, numComponents, epsilon = 0.00001, maxIterations = 100) {
+    const numRowsOriginal = matrixA.length;
+    const numColsOriginal = matrixA[0].length;
+
+    if (!numComponents) {
+        numComponents = Math.min(numRowsOriginal, numColsOriginal);
+    }
+
+    let matrixACopy = [...matrixA.map(row => [...row])];  // Deep copy of matrixA
+
+    if (numRowsOriginal > numColsOriginal) {
+        matrixA = matrixMultiply(transpose(matrixA), matrixA);
+    } else if (numRowsOriginal < numColsOriginal) {
+        matrixA = matrixMultiply(matrixA, transpose(matrixA));
+    }
+
+    const numRows = matrixA.length;
+    const numCols = matrixA[0].length;
+
+    let matrixQ = randomMatrix(numRows, numComponents);
+    matrixQ = qrDecomposition(matrixQ).Q;
+    let previousMatrixQ = matrixQ;
+
+    let matrixR;  // Declare matrixR outside the loop
+
+    for (let i = 0; i < maxIterations; i++) {
+        const matrixZ = matrixMultiply(matrixA, matrixQ);
+        const qrResult = qrDecomposition(matrixZ);
+        //console.log(qrResult)
+        matrixQ = qrResult.Q;
+        matrixR = qrResult.R;  // Update matrixR within the loop
+
+        const error = matrixSubtract(matrixQ, previousMatrixQ).reduce((sum, row) => sum + row.reduce((rowSum, val) => rowSum + val * val, 0), 0);
+
+        previousMatrixQ = matrixQ;
+
+        if (error < epsilon) {
+            break;
+        }
+    }
+
+    let singularValues = matrixR.map(row => Math.sqrt(row[row.indexOf(Math.max(...row))]));
+
+    let leftVectors, rightVectors;
+
+    if (numRowsOriginal < numColsOriginal) {
+        leftVectors = transpose(matrixQ);
+        rightVectors = matrixMultiply(
+            matrixMultiply(
+                inverse(diagonalMatrix(singularValues)), 
+                leftVectors), 
+            matrixACopy
+        );
+    } else if (numRowsOriginal === numColsOriginal) {
+        leftVectors = transpose(matrixQ);
+        rightVectors = leftVectors;
+        singularValues = singularValues.map(val => val * val);
+    } else {
+        rightVectors = transpose(matrixQ);
+        leftVectors = matrixMultiply(
+            matrixMultiply(matrixACopy, rightVectors), 
+            inverse(diagonalMatrix(singularValues))
+        );
+    }
+
+    return {
+        U: leftVectors,
+        S: singularValues,
+        V: rightVectors
+    };
+}
+
+
+const matrix = [
+    [4, 0],
+    [0, 3]
+];
+
+const matrix2 = [
+    [1, 2],
+    [3, 4]
+];
+
+const mat2 = [
+    [22.,10., 2.,  3., 7.],
+    [14., 7.,10.,  0., 8.],
+    [-1.,13.,-1.,-11., 3.],
+    [-3.,-2.,13., -2., 4.],
+    [ 9., 8., 1., -2., 4.],
+    [ 9., 1.,-7.,  5.,-1.],
+    [ 2.,-6., 6.,  5., 1.],
+    [ 4., 5., 0., -2., 2.]
+];
+
+const mat3 = [
+    Array.from({ length: 1000 }, (v,i) => Math.sin(i*0.0001*2*Math.PI))
+]
+
+//expected S:
+//  [35.327043465311384, 1.2982256062667619e-15,
+//  19.999999999999996, 19.595917942265423, 0.0]
+
+
+
+const result = svd(mat3);
+const result2 = svdSimultaneousPowerIteration(mat3)
+
+console.log("U matrix:", result.U);
+console.log("Singular values:", result.S);
+console.log("V matrix:", result.V);
+
+
+document.getElementById('input').innerHTML = JSON.stringify(mat3);
+document.getElementById('output').innerHTML = JSON.stringify(result);
+document.getElementById('output2').innerHTML = JSON.stringify(result2);
+        </script>
+    </body>
+</html>

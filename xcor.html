@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cross-Correlation Plot</title>
+    <!-- Load Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div id="sine-waves-plot"></div>
+    <div id="cross-correlation-plot"></div>
+
+    <script>
+        function crosscorrelation(signalA, signalB, posOnly=false) {
+            const N = signalA.length;
+            const M = signalB.length;
+            const result = [];
+
+            const normFactor = 1/Math.sqrt(signalA.reduce((acc, val) => acc + val * val, 0) * signalB.reduce((acc, val) => acc + val * val, 0));
+
+            if(posOnly) {
+                result.length = signalA.length;
+                for (let lag = 0; lag < signalA.length; lag++) {
+                    let sum = 0;
+
+                    for (let i = 0; i < signalA.length - lag; i++) {
+                        sum += signalA[i] * signalB[i + lag];
+                    }
+
+                    result[lag] = sum * normFactor;
+                }
+
+                return result;
+            }
+            else {
+                result.length = M + N;
+                let incr = 0;
+                for (let lag = -M + 1; lag < N; lag++) {
+                    let sum = 0;
+
+                    for (let n = 0; n < N; n++) {
+                        const m = n - lag;
+
+                        if (m >= 0 && m < M) {
+                            sum += signalA[n] * signalB[m];
+                        }
+                    }
+
+                    result[incr] = sum * normFactor;
+                    incr++;
+                }
+
+                return result;
+            }
+	    }
+
+        // Generate test sine waves
+        var n = 100; // Number of samples
+        var freq1 = 5; // Frequency of the first sine wave
+        var freq2 = 5; // Frequency of the second sine wave
+
+        var time = Array.from({ length: n }, (_, i) => i);
+        var sine1 = time.map(t => Math.sin(2 * Math.PI * freq1 * t / n));
+        var sine2 = time.map(t => Math.sin(2 * Math.PI * freq2 * t / n));
+
+        let posOnly = true;
+
+        // Calculate cross-correlation
+        var crossCorrelation = crosscorrelation(sine1, sine2, posOnly);
+
+        // Plot sine waves
+        var sineWavesPlot = document.getElementById('sine-waves-plot');
+        Plotly.newPlot(sineWavesPlot, [
+            { x: time, y: sine1, type: 'scatter', name: 'Sine Wave 1' },
+            { x: time, y: sine2, type: 'scatter', name: 'Sine Wave 2' }
+        ]);
+
+        // Plot cross-correlation
+        var lags = Array.from({ length: posOnly ? n : 2*n }, (_, i) => posOnly ? i : i-n);
+        var crossCorrelationPlot = document.getElementById('cross-correlation-plot');
+        Plotly.newPlot(crossCorrelationPlot, [{ x: lags, y: crossCorrelation, type: 'bar', name: 'Cross-Correlation' }]);
+    
+        document.body.innerHTML += crossCorrelation.length;
+        console.log(crossCorrelation);
+    </script>
+</body>
+</html>

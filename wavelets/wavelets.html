@@ -1,0 +1,947 @@
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.33.1/plotly.min.js"></script>
+</head>
+<body>
+    
+    <button id="load">
+        Load CSV
+    </button>
+    See console for results (F12)
+    <hr>
+    <br><br>
+    Raw + Transformed
+    <div id="chart1"></div>
+    Filtered (Raw - Transform)
+    <div id="chart1.2"></div>
+    <br><br>
+    Tests:
+    <hr>
+    Decompose Result for a line from 0 to 100
+    <div id="chart2"></div>
+    Wavelet transform deconstruction/reconstruction result for a line from 0 to 70
+    <div id="chart3"></div>
+    <script>
+
+                
+        document.getElementById("load").onclick = () => {
+            let dat;
+            //select file to load
+            CSV.openCSV((csvDat) => { 
+                dat = csvDat; //console.log(dat);
+                const parsed = {
+                    timestamps: new Array(csvDat.length-1),
+                    red:        new Array(csvDat.length-1),
+                    ir:         new Array(csvDat.length-1)
+                };
+                
+                function parseData(row,i) {
+                    if(i>0) {
+                        parsed.timestamps[i-1] = parseFloat(row[0]);
+                        parsed.red[i-1] = parseFloat(row[2]);
+                        parsed.ir[i-1] = parseFloat(row[3]);
+                    }
+                }
+
+                csvDat.forEach(parseData);
+                let x = [];
+
+                //let cpy = [...parsed.red];
+                //parsed.red = [...cpy,...cpy];
+
+                let maxChunk = parsed.red.length/2; //250 //30
+
+                let redReconstructed = [];
+
+                for(let i = 0; i < parsed.red.length; i += maxChunk) {
+                    let end = (i+maxChunk) > parsed.red.length ? parsed.red.length : (i+maxChunk);
+                    let chunk = parsed.red.slice(i,end);
+
+                    let maxlevel = dwtMaxLevel(chunk.length, dec_lo.length);
+
+                    let deco = decompose(chunk, maxlevel, dec_hi, dec_lo);
+
+                    for(let i = 2; i < deco.length; i++) {
+                        deco[i] = garroteThreshold(deco[i], 0.1*Math.max(...deco[i]));
+                    }
+
+                    let reco = reconstruct(deco, rec_hi, rec_lo);
+
+                    redReconstructed.push(...reco);
+                }
+
+                // let maxlevel = dwtMaxLevel(parsed.red.length, dec_lo.length);
+
+                // let redDecomposed = decompose(parsed.red, maxlevel, dec_hi, dec_lo);
+
+                // for(let i = 2; i < redDecomposed.length; i++) {
+                //     redDecomposed[i] = garroteThreshold(redDecomposed[i], 0.1*Math.max(...redDecomposed[i]));
+                // }
+                
+                // let redReconstructed = reconstruct(redDecomposed, rec_hi, rec_lo);
+
+                let hrfilter = new BiquadChannelFilterer({
+                    sps:100,
+                    useBandpass:true,
+                    bandpassLower:1,
+                    bandpassUpper:5
+                });
+
+                let breathfilter = new BiquadChannelFilterer({
+                    sps:100,
+                    useLowpass:true,
+                    lowpassHz:0.8
+                });
+
+                let redSubtracted = vecsub(parsed.red,redReconstructed)
+                let redHRFiltered = redSubtracted.map((v) => hrfilter.apply(v));
+                let redBreathFiltered = redSubtracted.map((v) => breathfilter.apply(v));
+
+                
+                // Example usage as proof it works.
+                const signal = linspace(0, 100, 101);
+
+                let decomposed = decompose(signal, 4, dec_hi, dec_lo);
+
+                const signal2 = Array.from({ length: 70 }, (_, i) => i + 1);
+
+                let coeffs = decompose(signal2, 4, dec_hi, dec_lo);
+
+                let reconstructed = reconstruct(coeffs, rec_hi, rec_lo);
+                
+                let config = { 
+                    scrollZoom: true, 
+                    responsive: true, 
+                }
+
+                let data = [{
+                        //x: parsed.timestamps,
+                        y: parsed.red,
+                        mode: 'line',
+                        marker: {
+                            color: "rgba(255,100,100, 1)"
+                        },
+                        name: "Red",
+                        //xbins: {  size: 0.01  }
+                    },{
+                        //x:parsed.timestamps,
+                        y:parsed.ir,
+                        mode: 'line',
+                        marker: {
+                            color: "rgba(100,255,100, 1)"
+                        },
+                        name: 'IR',    
+                        //xbins: {  size: 1  }
+                    },{
+                        //x:parsed.timestamps,
+                        y:redReconstructed,
+                        mode: 'line',
+                        marker: {
+                            color: "blue"
+                        },
+                        name: 'Red Reconstructed',    
+                        //xbins: {  size: 1  }
+                    },{
+                        //x:parsed.timestamps,
+                        y:redSubtracted,
+                        mode: 'line',
+                        marker: {
+                            color: "red"
+                        },
+                        name: 'Red Corrected',    
+                        //xbins: {  size: 1  }
+                    },{
+                        //x:parsed.timestamps,
+                        y:redHRFiltered,
+                        mode: 'line',
+                        marker: {
+                            color: "blue"
+                        },
+                        name: 'Red HR',    
+                        //xbins: {  size: 1  }
+                    },{
+                        //x:parsed.timestamps,
+                        y:redBreathFiltered,
+                        mode: 'line',
+                        marker: {
+                            color: "green"
+                        },
+                        name: 'Red Breathing',    
+                        //xbins: {  size: 1  }
+                    },
+                    { 
+                        y:decomposed[0],
+                        mode: 'line',
+                        marker: {
+                            color: "blue"
+                        },
+                        name: 'decomposition',    
+                    },
+                    { 
+                        y:signal2,
+                        mode: 'line',
+                        marker: {
+                            color: "orange"
+                        },
+                        name: 'original',    
+                    },
+                    { 
+                        y:reconstructed,
+                        mode: 'line',
+                        marker: {
+                            color: "purple"
+                        },
+                        name: 'reconstructed',    
+                    }
+                ];
+                
+                Plotly.newPlot("chart1", [data[0],data[2]])//,data[1]])
+                Plotly.newPlot("chart1.2", [data[3],data[4],data[5]])//,data[1]])
+                Plotly.newPlot("chart2", [data[6]])//,data[1]])//,data[1]])
+                Plotly.newPlot("chart3", [data[7],data[8]])
+
+            });
+        }
+
+        //The wavelet description and filter values are available here: https://wavelets.pybytes.com/wavelet/sym4/
+        const dec_lo = [
+            -0.07576571478927333,
+            -0.02963552764599851,
+            0.49761866763201545,
+            0.8037387518059161,
+            0.29785779560527736,
+            -0.09921954357684722,
+            -0.012603967262037833,
+            0.0322231006040427
+        ];
+
+        const dec_hi = [
+            -0.0322231006040427,
+            -0.012603967262037833,
+            0.09921954357684722,
+            0.29785779560527736,
+            -0.8037387518059161,
+            0.49761866763201545,
+            0.02963552764599851,
+            -0.07576571478927333
+        ];
+
+        const rec_lo = [
+            0.0322231006040427,
+            -0.012603967262037833,
+            -0.09921954357684722,
+            0.29785779560527736,
+            0.8037387518059161,
+            0.49761866763201545,
+            -0.02963552764599851,
+            -0.07576571478927333
+        ];
+
+        const rec_hi = [
+            -0.07576571478927333,
+            0.02963552764599851,
+            0.49761866763201545,
+            -0.8037387518059161,
+            0.29785779560527736,
+            0.09921954357684722,
+            -0.012603967262037833,
+            -0.0322231006040427
+        ];
+
+        function linspace(start, end, num, floor=false) {
+            const arr = new Array(num);
+            const step = (end - start) / (num - 1);
+            for (let i = 0; i < num; i++) {
+                arr[i] = start + step * i;
+                if(floor) arr[i] = Math.floor(i);
+            }
+            return arr;
+        }
+
+        function dyadicUpsample(a, even = true) {
+            const start = even ? 1 : 0;
+            const out = new Array(a.length * 2).fill(0);
+        
+            for (let i = 0; i < a.length; i++) {
+                out[start + i * 2] = a[i];
+            }
+        
+            return out;
+        }
+
+        function pad(arr, pad=1, padValue=0) {
+            if(Array.isArray(arr[0])) return pad2D(arr, pad)
+            if (pad > 0) {
+                let pads = new Array(pad).fill(padValue);
+                arr = [...pads, ...arr, ...pads];
+            }
+            return arr;
+        }
+
+        function pad2D(array, pad, padValue=0) {
+            // Pad each row in the original array
+            let pads = new Array(pad).fill(padValue);
+            const paddedArray = array.map(row => {
+                return [ ...pads, ...row, ...pads ];
+            });
+
+            // Create the padded rows for the top and bottom
+            const paddedRow = new Array(array[0].length + 2 * pad).fill(padValue);
+
+            // Add the padded rows to the top and bottom of the array
+            for (let i = 0; i < pad; i++) {
+                paddedArray.unshift([...paddedRow]);
+                paddedArray.push([...paddedRow]);
+            }
+
+            return paddedArray;
+        }
+
+        function edgePad(array, padSize) {
+            // Extract the first and last elements for padding
+            const firstElem = array[0];
+            const lastElem = array[array.length - 1];
+
+            // Create padding arrays
+            const startPadding = new Array(padSize).fill(firstElem);
+            const endPadding = new Array(padSize).fill(lastElem);
+
+            // Concatenate padding arrays with the original array
+            return startPadding.concat(array, endPadding);
+        }
+
+        function conv1D(s, kernel) {
+            // Reverse and copy the kernel
+            const revKernel = [...kernel].reverse();
+            const padsize = kernel.length - 1;
+
+            // Pad the input array with zeros
+            const paddedS = new Array(padsize).fill(0).concat(s).concat(new Array(padsize).fill(0));
+            const nSteps = paddedS.length - kernel.length + 1;
+
+            const result = new Array(nSteps).fill(0);
+            const nKer = kernel.length;
+
+            for (let i = 0; i < nSteps; i++) {
+                // Dot product
+                let sum = 0;
+                for (let j = 0; j < nKer; j++) {
+                    sum += paddedS[i + j] * revKernel[j];
+                }
+                result[i] = sum;
+            }
+
+            return result;
+        }
+
+        //Returns a list of coefficients in a form: [ca, cd1, cd2, cd3, cd4] where cd4 is the coefficient computed first (along with ca)
+        function decompose(signal=[], level=4, deconstructionHighPass=[], deconstructionLowPass=[]) {
+            const padlen = deconstructionLowPass.length;
+
+            // Assuming you have a pad function similar to numpy's pad
+            let sg = edgePad(signal, padlen);
+
+            // Assuming you have a convolve1d function similar to the one in Python
+            let approxCoeffs = conv1D(sg, deconstructionLowPass).slice(1 + padlen, -padlen).filter((_, idx) => idx % 2 === 0);
+            let detailCoeffs = conv1D(sg, deconstructionHighPass).slice(1 + padlen, -padlen).filter((_, idx) => idx % 2 === 0);
+            let results = [detailCoeffs];
+            for (let i = 0; i < level - 1; i++) {
+                approxCoeffs = edgePad(approxCoeffs, padlen);
+                results.push(conv1D(approxCoeffs, deconstructionHighPass).slice(1 + padlen, -padlen).filter((_, idx) => idx % 2 === 0));
+                approxCoeffs = conv1D(approxCoeffs, deconstructionLowPass).slice(1 + padlen, -padlen).filter((_, idx) => idx % 2 === 0);
+            }
+
+            return [approxCoeffs].concat(results.reverse());
+        }
+
+        function idwt(approxCoeffs=[], detailCoeffs=[], reconstructionHighPass=[], reconstructionLowPass=[]) {
+            if (approxCoeffs.length !== detailCoeffs.length) {
+                approxCoeffs.pop(); // Remove the last value from approximate coefficients if length is different
+            }
+            const _ca = dyadicUpsample(approxCoeffs, true); // Dyadic upsampling
+            const _cd = dyadicUpsample(detailCoeffs, true);
+            const halfa = conv1D(_ca, reconstructionLowPass); // Compute next approximate coefficients
+            const halfb = conv1D(_cd, reconstructionHighPass); // Compute next detail coefficients
+
+            const sig = halfa.map((val, idx) => val + halfb[idx]);
+
+            // Remove unnecessary values
+            const padlen = reconstructionLowPass.length;
+            const lo = padlen - 1;
+            const hi = sig.length - (padlen - 2);
+            return sig.slice(lo, hi);
+        }
+
+        function dwtMaxLevel(dataLength, waveletLength) {
+            return Math.floor(Math.log2(dataLength / (waveletLength - 1)));
+        }
+
+        function reconstruct(coeffs=[], reconstructionHighPass=[], reconstructionLowPass=[]) {
+            let res = idwt(coeffs[0], coeffs[1], reconstructionHighPass, reconstructionLowPass);
+            const level = coeffs.length;
+            for (let i = 2; i < level; i++) {
+                res = idwt(res, coeffs[i], reconstructionHighPass, reconstructionLowPass);
+            }
+            return res;
+        }
+
+        function minMaxScaler(data) {
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+            return data.map(value => (value - min) / (max - min));
+        }
+
+        function garroteThreshold(data, value) {
+            return data.map(x => {
+                if (Math.abs(x) <= value) {
+                    return 0;
+                } else {
+                    return x - (value * value) / x;
+                }
+            });
+        }
+
+        let vecsub=(vec,subvec)=> {
+            return vec.map((v,i) => v - subvec[i]);
+        } 
+
+
+
+
+
+
+
+                
+        class CSV { //data=["1|2","11|22"], or data=[[1,2,"xyz"],[2,3,"abc"],etc]
+            constructor(onOpen=this.onOpen, saveButtonId=null, openButtonId=null) {
+
+                this.onOpen = onOpen;
+                this.notes = [{idx:0,text:"comment"}]; //order comments by data index
+
+                if(saveButtonId !== null) {
+                    document.getElementById(saveButtonId).addEventListener('click', this.saveCSV);
+                }
+                if(openButtonId !== null) {
+                    document.getElementById(openButtonId).addEventListener('click', this.openCSV);
+                }
+            }
+
+            processArraysForCSV(data=["1|2|3","3|2|1"],  delimiter="|", header="a,b,c",saveNotes=false) {
+                let csvDat = header+"\n";
+                let noteIdx = 0;
+                data.forEach((line, i) => { //Add comments from an array with this structure this.notes = [{idx:n, text: "comment"},{...}]       
+                    if(data[i] === "string" && delimiter !== ",") { csvDat += line.split(delimiter).join(","); } 
+                    else{ csvData += line.join(",");} // Data can just be an array of arrays
+                    if (saveNotes === true) {
+                        if(this.notes[noteIdx].idx === i) {
+                            line += this.notes[noteIdx].text;
+                            noteIdx++;
+                        }
+                    }
+                    if(line.indexOf('\n') < 0) {csvDat+="\n";} //Add line endings exist in unprocessed array data
+                });
+
+                return csvDat;
+            }
+
+            //Converts an array of strings (e.g. raw data stream text) or an array of arrays representing lines of data into CSVs
+            static saveCSV(csvDat="a,b,c\n1,2,3\n3,2,1\n",name=new Date().toISOString()){
+                var hiddenElement = document.createElement('a');
+                hiddenElement.href = "data:text/csv;charset=utf-8," + encodeURI(csvDat);
+                hiddenElement.target = "_blank";
+                if (name !== "") {
+                    hiddenElement.download = name+".csv";
+                } else{
+                    hiddenElement.download = Date().toISOString()+".csv";
+                }
+                hiddenElement.click();
+            }
+
+            static openCSV(onOpen = (csvDat)=>{console.log(csvDat);}, delimiter = ",") {
+                var input = document.createElement('input');
+                input.accept = '.csv';
+                input.type = 'file';
+
+                input.onchange = (e) => {
+                    var file = e.target.files[0];
+                    var reader = new FileReader();
+                    reader.readAsText(file);
+                    reader.onload = (event) => {
+                        var tempcsvData = event.target.result;
+                        var tempcsvArr = tempcsvData.split("\n");
+                        var csvDat = []
+                        tempcsvArr.pop();
+                        tempcsvArr.forEach((row,i) => {
+                            if(i==0){ var temp = row.split(delimiter); }
+                            else{
+                            var temp = row.split(delimiter);
+                            csvDat.push(temp);
+                            }
+                        });
+                        onOpen(csvDat);
+                        return csvDat;
+                    }
+                    input.value = '';
+                }
+                input.click();
+            } 
+
+            onOpen(csvDat=[]) { // Customize this function in your init script, access data with ex. console.log(serialMonitor.csvDat), where var serialMonitor = new chromeSerial(defaultUI=false)
+                console.log("CSV Opened!",csvDat);
+                return csvDat;
+            }
+        }
+
+
+        //https://arachnoid.com/phase_locked_loop/resources/biquad_module.py
+//Translated to JS by Josh Brewster (MIT License), added BiquadChannelFilterer macros.
+
+// export type FilterSettings = {
+//   sps:number, //required
+//   useSMA4?:boolean,
+//   useNotch50?:boolean,
+//   useNotch60?:boolean,
+//   useLowpass?: boolean,
+//   lowpassHz?:number,   
+//   useHighpass?:boolean,
+//   highpassHz?:number,
+//   useBandpass?: boolean,
+//   bandpassLower?:number,
+//   bandpassUpper?:number,
+//   useDCBlock?: boolean,
+//   DCBresonance?: number,
+//   useScaling?: boolean,
+//   scalar?:number,
+//   trimOutliers?:boolean,
+//   outlierTolerance?:number
+// }
+
+// //Macro for running multiple filter passes over a signal. 
+class BiquadChannelFilterer {
+
+    idx//:number; 
+    sps//:number; 
+    bandpassLower//?:number; 
+    bandpassUpper//?:number; 
+    useSMA4//?:boolean; 
+    last4//?:number[]; 
+    filtered//:number; //last sample
+    trimOutliers//?:boolean;
+    outlierTolerance//?:number;
+    useNotch50//?:boolean; 
+    useNotch60//?:boolean;
+    useLowpass//?:boolean; 
+    lowpassHz//?:number;
+    useBandpass//?:boolean; 
+    useDCBlock//?:boolean; 
+    DCBresonance//?:number;
+    useScaling//?:boolean; 
+    scalar//?:number; 
+    notch50//?:any; 
+    notch60//?:any; 
+    lp1//?:any; 
+    bp1//?:any; 
+    dcb//?:any;
+    hp1
+
+    constructor(
+    options={
+        sps:512, //important to be precise!!
+        useSMA4:false,
+        useNotch50:false,
+        useNotch60:false,
+        useLowpass: false,
+        lowpassHz:100,
+        highpassHz:3,
+        useHighpass:false,
+        useBandpass: false,
+        bandpassLower:3,
+        bandpassUpper:45,
+        useDCBlock: false,
+        DCBresonance:0.995,
+        trimOutliers:false,
+        outlierTolerance:0.20,
+        useScaling: false,
+        scalar:1,
+    }
+    ) {
+    this.idx = 0; 
+    this.sps = options.sps;
+    this.bandpassLower = options.bandpassLower ? options.bandpassLower : 3; 
+    this.bandpassUpper = options.bandpassUpper ? options.bandpassUpper : 45;
+
+    this.useSMA4 = options.useSMA4; this.last4=[];
+    this.useNotch50 = options.useNotch50; 
+    this.useNotch60 = options.useNotch60;
+    this.useLowpass = options.useLowpass; 
+    this.lowpassHz = options.lowpassHz ? options.lowpassHz : 100;
+    this.useHighpass = options.useHighpass;
+    this.highpassHz = options.highpassHz ? options.highpassHz : 3;
+    this.useBandpass = options.useBandpass;
+    this.useDCBlock = options.useDCBlock;
+    this.DCBresonance = options.DCBresonance ? options.DCBresonance : 0.995;
+    this.useScaling = options.useScaling;
+    this.scalar = options.scalar;
+    this.trimOutliers = options.trimOutliers;
+    this.outlierTolerance = options.outlierTolerance;
+
+    let sps = this.sps;
+    this.notch50 = [
+                makeNotchFilter(50,sps,2),
+                makeNotchFilter(100,sps,2)
+            ];
+    this.notch60 = [
+                makeNotchFilter(60,sps,2),
+                makeNotchFilter(120,sps,2)
+            ];
+    this.lp1 = [
+                new Biquad('lowpass', this.lowpassHz, sps),
+                new Biquad('lowpass', this.lowpassHz, sps),
+                new Biquad('lowpass', this.lowpassHz, sps),
+                new Biquad('lowpass', this.lowpassHz, sps)
+            ];
+
+    this.hp1 = [
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps)     
+            ];
+
+
+    this.bp1 = [
+                makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+                makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+                makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+                makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1)
+            ];
+    this.dcb = new DCBlocker(options.DCBresonance ? options.DCBresonance : 0.995);
+    }
+
+    reset(sps=this.sps) {
+        this.notch50 = [
+                    makeNotchFilter(50,sps,2),
+                    makeNotchFilter(100,sps,2)
+                ];
+                
+        this.notch60 = [
+                makeNotchFilter(60,sps,2),
+                makeNotchFilter(120,sps,2)
+            ];
+        this.l
+        p1 = [
+                    new Biquad('lowpass', this.lowpassHz, sps),
+                    new Biquad('lowpass', this.lowpassHz, sps),
+                    new Biquad('lowpass', this.lowpassHz, sps),
+                    new Biquad('lowpass', this.lowpassHz, sps)
+                ];
+
+        this.hp1 = [
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps),
+                new Biquad('highpass', this.highpassHz, sps)     
+            ];
+
+        this.bp1 = [
+            makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+            makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+            makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1),
+            makeBandpassFilter(this.bandpassLower,this.bandpassUpper,sps,1)
+        ];
+        this.dcb = new DCBlocker(this.DCBresonance);
+    }
+
+    setBandpass(bandpassLower=this.bandpassLower,bandpassUpper=this.bandpassUpper,sps=this.sps) {
+        this.bandpassLower=bandpassLower; this.bandpassUpper = bandpassUpper;
+        this.bp1 = [
+            makeBandpassFilter(bandpassLower,bandpassUpper,sps),
+            makeBandpassFilter(bandpassLower,bandpassUpper,sps),
+            makeBandpassFilter(bandpassLower,bandpassUpper,sps),
+            makeBandpassFilter(bandpassLower,bandpassUpper,sps)
+        ];
+    }
+
+    apply(
+    latestData=0
+    ) {
+        let out=latestData; 
+        if(this.useScaling === true){
+            out *= this.scalar;
+        }
+        if(this.filtered && this.trimOutliers && this.outlierTolerance) {
+        if(Math.abs(out - this.filtered) > this.outlierTolerance) {
+            out = this.filtered; 
+        }
+        }
+        if(this.useDCBlock === true) { //Apply a DC blocking filter
+            out = this.dcb.applyFilter(out);
+        }
+        if(this.useSMA4 === true) { // 4 sample simple moving average (i.e. low pass)
+        if(!this.last4) this.last4 = [];
+
+        if(this.last4.length < 4) {
+            this.last4.push(out);
+        }
+        else {
+            out = this.last4.reduce((accumulator, currentValue) => accumulator + currentValue)/this.last4.length;
+            this.last4.shift();
+            this.last4.push(out);
+        }
+        }
+    
+        if(this.useNotch50 === true) { //Apply a 50hz notch filter
+            this.notch50.forEach((f,i) => {
+                out = f.applyFilter(out);
+            });
+        }
+        if(this.useNotch60 === true) { //Apply a 60hz notch filter
+            this.notch60.forEach((f,i) => {
+                out = f.applyFilter(out);
+            });
+        } 
+        if(this.useLowpass === true) { //Apply 4 50Hz lowpass filters
+            this.lp1.forEach((f,i) => {
+                out = f.applyFilter(out);
+            });
+        } 
+        if(this.useHighpass === true) { //Apply 4 50Hz lowpass filters
+            this.hp1.forEach((f,i) => {
+                out = f.applyFilter(out);
+            });
+        }
+        if(this.useBandpass === true) { //Apply 4 Bandpass filters
+            this.bp1.forEach((f,i) => {
+                out = f.applyFilter(out);
+            });
+            //out *= this.bp1.length;
+        }
+        this.filtered = out;
+        this.idx++;
+        //console.log(this.channel, out)
+        return out;
+    }
+    }
+
+
+class Biquad {
+
+    type;
+
+    freq;
+    sps;
+    Q;
+    dbGain;
+
+    a0 = 0;a1 = 0;a2 = 0;
+    b0 = 0;b1 = 0;b2 = 0;
+
+    x1 = 0;
+    x2 = 0;
+    y1 = 0;
+    y2 = 0;
+
+
+
+    constructor(
+        type,//:'lowpass'|'highpass'|'bandpass'|'notch'|'peak'|'lowshelf'|'highshelf',
+        freq,//:number,
+        sps,//:number,
+        Q=1/Math.sqrt(2),
+        dbGain=0
+        ) {
+        let types = ['lowpass','highpass','bandpass','notch','peak','lowshelf','highshelf'];
+        if(types.indexOf(type) < 0) { 
+            console.error("Valid types: 'lowpass','highpass','bandpass','notch','peak','lowshelf','highshelf'"); 
+            return; 
+        }
+        this.type = type;
+
+        this.freq = freq;
+        this.sps = sps;
+        this.Q = Q;
+        this.dbGain = dbGain;
+
+        let A = Math.pow(10,dbGain/40);
+        let omega = 2*Math.PI*freq/sps;
+        let sn = Math.sin(omega)
+        let cs = Math.cos(omega);
+        let alpha = sn/(2*Q);
+        let beta = Math.sqrt(A+A);
+
+        this[type](A,sn,cs,alpha,beta);
+
+        //scale constants
+        this.b0 /= this.a0;
+        this.b1 /= this.a0;
+        this.b2 /= this.a0;
+        this.a1 /= this.a0;
+        this.a2 /= this.a0;
+    
+    }
+
+    lowpass(A,sn,cs,alpha,beta) { //Stop upper frequencies
+        this.b0 = (1-cs)*.5;
+        this.b1 = 1-cs;
+        this.b2 = (1-cs)*.5;
+        this.a0 = 1+alpha;
+        this.a1 = -2*cs;
+        this.a2 = 1-alpha;
+    }
+
+    highpass(A,sn,cs,alpha,beta) { //Stop lower frequencies 
+        this.b0 = (1+cs)*.5;
+        this.b1 = -(1+cs);
+        this.b2 = (1+cs)*.5;
+        this.a0 = 1 + alpha;
+        this.a1 = -2*cs;
+        this.a2 = 1-alpha;
+    }
+
+    bandpass(A,sn,cs,alpha,beta) { //Stop lower and upper frequencies. Q = frequency_resonant / Bandwidth(to 3db cutoff line); frequency_resonant = Math.sqrt(f_low * f_high); So for 60Hz with 0.5Hz bandwidth: Fr = Math.sqrt(59.5*60.5). Q = Fr/0.5 = 120;
+        this.b0 = alpha;
+        this.b1 = 0;
+        this.b2 = -alpha;
+        this.a0 = 1+alpha;
+        this.a1 = -2*cs;
+        this.a2 = 1-alpha;
+    }
+
+    notch(A,sn,cs,alpha,beta) { //Stop a specific frequency
+        this.b0 = 1;
+        this.b1 = -2*cs;
+        this.b2 = 1;
+        this.a0 = 1+alpha;
+        this.a1 = -2*cs;
+        this.a2 = 1-alpha;
+    }
+
+    peak(A,sn,cs,alpha,beta) { //Opposite of a notch filter, stop all but one frequency
+        this.b0 = 1+(alpha*A);
+        this.b1 = -2*cs;
+        this.b2 = 1-(alpha*A);
+        this.a0 = 1+(alpha/A);
+        this.a1 = -2*cs;
+        this.a2 = 1-(alpha/A);
+    }
+
+    lowshelf(A,sn,cs,alpha,beta) { //Amplify signals below the cutoff
+        this.b0 = A*((A+1) - (A-1)*cs + beta*sn);
+        this.b1 = 2*A*((A-1)-(A+1)*cs);
+        this.b2 = A*((A+1) - (A-1)*cs - beta*sn);
+        this.a0 = (A+1) + (A+1)*cs + beta*sn;
+        this.a1 = 2*((A-1) + (A+1)*cs);
+        this.a2 = (A+1) + (A-1)*cs - beta*sn;
+    }
+
+    highshelf(A,sn,cs,alpha,beta) { //Amplify signals above the cutoff
+        this.b0 = A*((A+1) + (A-1)*cs + beta*sn);
+        this.b1 = 2*A*((A-1) + (A+1)*cs);
+        this.b2 = A*((A+1) - (A-1)*cs - beta*sn);
+        this.a0 = (A+1) - (A+1)*cs - beta*sn;
+        this.a1 = 2*((A-1) - (A+1)*cs);
+        this.a2 = (A+1) - (A-1)*cs - beta*sn;
+    }
+
+    applyFilter(signal_step) { //Step the filter forward, return modulated signal amplitude
+        let y = this.b0*signal_step + this.b1*this.x1 + this.b2*this.x2 - this.a1*this.y1 - this.a2*this.y2;
+        this.x2 = this.x1;
+        this.x1 = signal_step;
+        this.y2 = this.y1;
+        this.y1 = y;
+    
+        return y;
+    }
+
+    zResult(freq) { //This should return the z-transfer function values. Max freq = sps/2
+        try{
+            let phi = Math.pow((Math.sin(Math.PI*freq*2/(2*this.sps))),2);
+            let result = (Math.pow(this.b0+this.b1+this.b2,2) - 
+                        4*(this.b0*this.b1+4*this.b0*this.b2 + this.b1*this.b2)*phi + 16*this.b0*this.b2*phi*phi) / 
+                        (Math.pow(1+this.a1+this.a2,2) - 4*(this.a1 + 4*this.a2 + this.a1*this.a2)*phi + 16*this.a2*phi*phi)
+            return result;
+        } catch(err) {
+            return -200;
+        }
+    }
+
+    //Get the center frequency for your bandpass filter
+    static calcCenterFrequency(freqStart,freqEnd) {
+        return (freqStart+freqEnd) / 2;
+    }
+
+    static calcBandwidth(freqStart,freqEnd) {
+        return (freqEnd-this.calcCenterFrequency(freqStart,freqEnd));
+    }
+
+    //Use for bandpass or peak filter //Q gets sharper as resonance approaches infinity. Set to 500 for example for a more precise filter. Recommended r: Math.floor(Math.log10(frequency))
+    static calcBandpassQ (frequency, bandwidth, resonance=Math.pow(10,Math.floor(Math.log10(frequency)))) { //Use Math.sqrt(0.5) for low pass, high pass, and shelf filters
+        let Q = resonance*Math.sqrt((frequency-bandwidth)*(frequency+bandwidth))/(2*bandwidth); //tweaked
+        return Q;
+    }
+
+    static calcNotchQ (frequency, bandwidth, resonance=Math.pow(10,Math.floor(Math.log10(frequency)))) { //Q gets sharper as resonance approaches infinity. Recommended r: Math.floor(Math.log10(frequency))
+        let Q = resonance*frequency*bandwidth/Math.sqrt((frequency-bandwidth)*(frequency+bandwidth)); // bw/f
+        return Q;
+    }
+
+    }
+
+     class DCBlocker {
+
+        r; //:number;
+        x1;//:number;
+        x2;//:number;
+        y1;//:number;
+        y2;//:number;
+
+        constructor(r=0.995) {
+        this.r = r;
+        this.y1=this.y2=this.x1=this.x2=0;
+    }
+
+    applyFilter(signal_step) {
+        this.x2=this.x1;
+        this.x1 = signal_step
+        let y = this.x1 - this.x2 + this.r*this.y1;
+        
+        this.y2 = this.y1;
+        this.y1 = y;
+        
+        return y;
+    }
+    }
+
+
+    /* 
+
+    let notch = new Biquad('notch',60,512,Biquad.calcNotchQ(60,1),0);
+
+    let bandpass = new Biquad('bandpass',
+                            Biquad.calcCenterFrequency(3,45),
+                            512,
+                            Biquad.calcBandpassQ(Biquad.calcCenterFrequency(3,45),Biquad.calcBandwidth(3,45)),
+                            0);
+
+    */
+
+    //Macros
+     const makeNotchFilter = (frequency,sps,bandwidth) => {
+        return new Biquad('notch',frequency,sps,Biquad.calcNotchQ(frequency,bandwidth),0);
+    }
+
+     const makeBandpassFilter = (freqStart,freqEnd,sps,resonance=Math.pow(10,Math.floor(Math.log10(Biquad.calcCenterFrequency(freqStart,freqEnd))))) => {
+        return new Biquad('bandpass',
+            Biquad.calcCenterFrequency(freqStart,freqEnd),
+            sps,
+            Biquad.calcBandpassQ(Biquad.calcCenterFrequency(freqStart,freqEnd),Biquad.calcBandwidth(freqStart,freqEnd),resonance),
+            0
+        );
+    }
+
+
+
+        
+    </script>
+</body>
+</html>
